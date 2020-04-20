@@ -23,6 +23,15 @@ def generate_factors_table(raw_array):
         row[0] * row[1] * row[2]]+list(map(lambda x: round(x ** 2, 5),\
          row))for row in raw_array]
 
+def x_i(i, raw_factors_table):
+    try:
+        assert i <= 10
+    except:
+        raise AssertionError("Error")
+    with_null_factor = list(map(lambda x: [1] + x, generate_factors_table(raw_factors_table)))
+    res = [row[i] for row in with_null_factor]
+    return np.array(res)
+
 def cochran_criteria(m, N, y_table, p=0.95):
     print("Перевірка однорідності дисперсій за критерієм Кохрена: ")
     y_variations = [np.var(i) for i in y_table]
@@ -39,15 +48,6 @@ def cochran_criteria(m, N, y_table, p=0.95):
     else:
         print("Gp > Gt => дисперсі неоднорідна ")
         return False
-
-def x_i(i, raw_factors_table):
-    try:
-        assert i <= 10
-    except:
-        raise AssertionError("Error")
-    with_null_factor = list(map(lambda x: [1] + x, generate_factors_table(raw_factors_table)))
-    res = [row[i] for row in with_null_factor]
-    return np.array(res)
 
 def m_ij(*arrays):
     return np.average(reduce(lambda accum, el: accum*el, arrays))
