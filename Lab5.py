@@ -1,185 +1,269 @@
 import random
-import math
-from functools import reduce
-from itertools import compress
-from _pydecimal import Decimal
-from scipy.stats import f, t
 import numpy as np
+import sklearn.linear_model as lm
+from scipy.stats import f, t
+from prettytable import PrettyTable
+import math
 
-x1min, x1max = -1, 2
-x2min, x2max = -9, 6
-x3min, x3max = -5, 8
-x_avr_min = (x1min + x2min + x3min) / 3
-x_avr_max = (x1max + x2max + x3max) / 3
-m = 3
-N = 15
-ymin = 200 + x_avr_min
-ymax = 200 + x_avr_max
-p = 0.95
+x_range = ((-7, 4), (-6, 10), (-8, 1))
 
-def generate_factors_table(raw_array):
+y_max = 200 + int(sum([x[1] for x in x_range]) / 3)
+y_min = 200 + int(sum([x[0] for x in x_range]) / 3)
 
-    return [row + [row[0] * row[1], row[0] * row[2], row[1] * row[2], \
-        row[0] * row[1] * row[2]]+list(map(lambda x: round(x ** 2, 5),\
-         row))for row in raw_array]
+def regression(x, b):
+    y = sum([x[i] * b[i] for i in range(len(x))])
+    return y
 
-def x_i(i, raw_factors_table):
-    try:
-        assert i <= 10
-    except:
-        raise AssertionError("Error")
-    with_null_factor = list(map(lambda x: [1] + x, generate_factors_table(raw_factors_table)))
-    res = [row[i] for row in with_null_factor]
-    return np.array(res)
+def dispersion(y, y_aver, n, m):
+    res = []
+    for i in range(n):
+        s = sum([(y_aver[i] - y[i][j]) ** 2 for j in range(m)]) / m
+        res.append(round(s, 3))
+    return res
 
-def cochran_criteria(m, N, y_table, p=0.95):
-    print("Перевірка однорідності дисперсій за критерієм Кохрена: ")
-    y_variations = [np.var(i) for i in y_table]
-    max_y_variation = max(y_variations)
-    gp = max_y_variation/sum(y_variations)
+def planing_matrix(n, m, interaction, quadratic_terms):
+    x_normalized = [[1, -1, -1, -1],
+                    [1, -1, 1, 1],
+                    [1, 1, -1, 1],
+                    [1, 1, 1, -1],
+                    [1, -1, -1, 1],
+                    [1, -1, 1, -1],
+                    [1, 1, -1, -1],
+                    [1, 1, 1, 1]]
+
+    y = np.zeros(shape=(n, m))
+
+    for i in range(n):
+        for j in range(m):
+            y[i][j] = random.randint(y_min, y_max)
+
+    if interaction:
+        for x in x_normalized:
+            x.append(x[1] * x[2])
+            x.append(x[1] * x[3])
+            x.append(x[2] * x[3])
+            x.append(x[1] * x[2] * x[3])
+
+    if quadratic_terms and interaction:
+        for row in x_normalized:
+            for i in range(0, 3):
+                row.append(1)
+
+        l = 1.215
+        for i in range(0, 3):
+            row1 = [1]
+            row2 = [1]
+            for n in range(0, i):
+                row1.append(0)
+                row2.append(0)
+            row1.append(-l)
+            row2.append(l)
+            for _ in range(0, 6):
+                row1.append(0)
+                row2.append(0)
+            row1.append(round(l*l, 3))
+            row2.append(round(l*l, 3))
+            temp = 2 - i
+            for _ in range(0, temp):
+                row1.append(0)
+                row2.append(0)
+            x_normalized.append(row1)
+            x_normalized.append(row2)
+        row15 = []
+        for _ in range(0, 11):
+            row15.append(0)
+        x_normalized.append(row15)
+
+    x_normalized = np.array(x_normalized[:len(y)])
+    x = np.ones(shape=(len(x_normalized), len(x_normalized[0])))
+
+    for i in range(len(x_normalized)):
+        for j in range(1, 4):
+            if x_normalized[i][j] == -1:
+                x[i][j] = x_range[j - 1][0]
+            else:
+                x[i][j] = x_range[j - 1][1]
+    # print(x)
+    if quadratic_terms and interaction:
+        x[8] = [1,-l * delta_x(0) + x_nul(0), x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+        x[9] = [1, l * delta_x(0) + x_nul(0), x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+        x[10] = [1, x_nul(0), -l * delta_x(1) + x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+        x[11] = [1, x_nul(0),  l * delta_x(1) + x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+        x[12] = [1, x_nul(0), x_nul(1), -l * delta_x(2) + x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+        x[13] = [1, x_nul(0), x_nul(1),  l * delta_x(2) + x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+        x[14] = [1, x_nul(0), x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
+
+        for i in range(8, 15):
+            for j in range(0, 11):
+                x[i][j] = round(x[i][j], 3)
+
+    if interaction:
+        for i in range(len(x)):
+            x[i][4] = round(x[i][1] * x[i][2], 3)
+            x[i][5] = round(x[i][1] * x[i][3], 3)
+            x[i][6] = round(x[i][2] * x[i][3], 3)
+            x[i][7] = round(x[i][1] * x[i][3] * x[i][2], 3)
+            x[i][8] = round(x[i][1] * x[i][1], 3)
+            x[i][9] = round(x[i][2] * x[i][2], 3)
+            x[i][10] = round(x[i][3] * x[i][3], 3)
+
+
+    if interaction:
+        print(f'\nМатриця планування для n = {n}, m = {m}')
+
+        print('\nЗ кодованими значеннями факторів:')
+        caption = ["X0", "X1", "X2", "X3", "X1X2", "X1X3", "X2X3", "X1X2X3","X1^2", "X2^2", "X3^2", "Y1", "Y2", "Y3"]
+        rows_kod = np.concatenate((x, y), axis=1)
+        print_table(caption, rows_kod)
+
+        print('\nЗ нормованими значеннями факторів:\n')
+        rows_norm = np.concatenate((x_normalized, y), axis=1)
+        print_table(caption, rows_norm)
+    else:
+        print('\nМатриця планування:')
+        caption = ["X0", "X1", "X2", "X3", "Y1", "Y2", "Y3"]
+        rows = np.concatenate((x, y), axis=1)
+        print_table(caption, rows)
+
+    return x, y, x_normalized
+
+
+def x_nul(n):
+    return (x_range[n][0] + x_range[n][1]) / 2
+
+
+def delta_x(n):
+    return x_nul(n) - x_range[n][0]
+
+
+def print_table(caption, values):
+    table = PrettyTable()
+    table.field_names = caption
+
+    for row in values:
+        table.add_row(row)
+    print(table)
+
+
+def find_coef(X, Y, norm=False):
+    skm = lm.LinearRegression(fit_intercept=False)
+    skm.fit(X, Y)
+    B = skm.coef_
+
+    if norm == 1:
+        print('\nКоефіцієнти рівняння регресії з нормованими X:')
+    else:
+        print('\nКоефіцієнти рівняння регресії:')
+    B = [round(i, 3) for i in B]
+    print(B)
+    return B
+
+
+def s_kv(y, y_aver, n, m):
+    res = []
+    for i in range(n):
+        s = sum([(y_aver[i] - y[i][j])**2 for j in range(m)]) / m
+        res.append(s)
+    return res
+
+
+def kriteriy_fishera(y, y_aver, y_new, n, m, d):
+    S_kv_ad = (m / (n - d)) * sum([(y_new[i] - y_aver[i])**2 for i in range(len(y))])
+    S_kv_b = s_kv(y, y_aver, n, m)
+    S_kv_b_aver = sum(S_kv_b) / n
+
+    return S_kv_ad / S_kv_b_aver
+
+def check(n, m, interaction, quadratic_terms):
+
     f1 = m - 1
-    f2 = N
-    q = 1-p
-    gt = get_cochran_value(f1,f2, q)
-    print(f"Gp = {gp:.3f}; Gt = {gt:.3f}; f1 = {f1}; f2 = {f2}; q = {q:.3f}")
-    if gp < gt:
-        print("Gp < Gt => дисперсія  однорідна  ")
+    f2 = n
+    f3 = f1 * f2
+    q = 0.05
+
+    x, y, x_norm = planing_matrix(n, m, interaction, quadratic_terms)
+
+    if interaction:
+        y_average = [round(sum(i) / len(i), 3) for i in y]
+        B = find_coef(x, y_average, norm=interaction)
+    else:
+        y_average = [round(sum(i) / len(i), 2) for i in y]
+        B = find_coef(x, y_average, norm=interaction)
+
+    print('\nСереднє значення y:', y_average)
+
+    dispersion_arr = dispersion(y, y_average, n, m)
+    temp_cohren = f.ppf(q=(1 - q / f1), dfn=f2, dfd=(f1 - 1) * f2)
+    cohren_cr_table = temp_cohren / (temp_cohren + f1 - 1)
+    Gp = max(dispersion_arr) / sum(dispersion_arr)
+
+    print('\nПеревірка за критерієм Кохрена:\n')
+    print(f'Розрахункове значення: Gp = {Gp}'
+          f'\nТабличне значення: Gt = {cohren_cr_table}')
+    if Gp < cohren_cr_table:
+        print(f'З ймовірністю {1-q} дисперсії однорідні.')
+    else:
+        print("Необхідно збільшити m")
+        m += 1
+        check(n, m, interaction)
+
+    qq = (1 + 0.95) / 2
+    student_cr_table = t.ppf(df=f3, q=qq)
+
+    Dispersion_B = sum(dispersion_arr) / n
+    Dispersion_beta = Dispersion_B / (m * n)
+    S_beta = math.sqrt(abs(Dispersion_beta))
+
+    student_t = []
+    for i in range(len(B)):
+        student_t.append(round(abs(B[i]) / S_beta, 3))
+
+    print('\nТабличне значення критерій Стьюдента:\n', student_cr_table)
+    print('Розрахункове значення критерій Стьюдента:\n', student_t)
+    res_student_t = [temp for temp in student_t if temp > student_cr_table]
+    final_coefficients = [B[i] for i in range(len(student_t)) if student_t[i] in res_student_t]
+    print('\nКоефіцієнти {} статистично незначущі.'.format(
+        [round(i, 3) for i in B if i not in final_coefficients]))
+
+    y_new = []
+    if interaction:
+        for j in range(n):
+            y_new.append(regression([x[j][i] for i in range(len(student_t)) if student_t[i] in res_student_t], final_coefficients))
+    else:
+        for j in range(n):
+            y_new.append(regression([x[j][student_t.index(i)] for i in student_t if i in res_student_t], final_coefficients))
+
+    print(f'\nЗначення рівння регресії з коефіцієнтами {final_coefficients}: ')
+    for i in range(len(y_new)):
+        y_new[i] = round(y_new[i], 3)
+    print(y_new)
+    d = len(res_student_t)
+
+    if d >= n:
+        print('\nF4 <= 0')
+        print('')
+        return
+    f4 = n - d
+
+    Fp = kriteriy_fishera(y, y_average, y_new, n, m, d)
+    Ft = f.ppf(dfn=f4, dfd=f3, q=1 - 0.05)
+
+    print('\nКритерій Фішера:\n')
+    print('Fp =', Fp)
+    print('Ft =', Ft)
+    if Fp < Ft:
+        print('Fp < Ft, Математична модель адекватна')
         return True
     else:
-        print("Gp > Gt => дисперсі неоднорідна ")
+        print('Fp > Ft, Математична модель не адекватна')
         return False
 
-def m_ij(*arrays):
-    return np.average(reduce(lambda accum, el: accum*el, arrays))
 
-def calculate_theoretical_y(x_table, b_coefficients, importance):
-
-    x_table = [list(compress(row, importance)) for row in x_table]
-    b_coefficients = list(compress(b_coefficients, importance))
-    y_vals = np.array([sum(map(lambda x, b: x*b, row, b_coefficients)) for row in x_table])
-    return y_vals
-
-def get_cochran_value(f1, f2, q):
-    partResult1 = q / f2 # (f2 - 1)
-    params = [partResult1, f1, (f2 - 1) * f1]
-    fisher = f.isf(*params)
-    result = fisher/(fisher + (f2 - 1))
-    return Decimal(result).quantize(Decimal('.0001'))
-
-def get_student_value(f3, q):
-    return Decimal(abs(t.ppf(q/2,f3))).quantize(Decimal('.0001'))
-
-def get_fisher_value(f3,f4, q):
-    return Decimal(abs(f.isf(q,f4,f3))).quantize(Decimal('.0001'))
-
-x0 = [(x1max+x1min)/2, (x2max+x2min)/2, (x3max+x3min)/2]
-detx = [abs(x1min - x0[0]), abs(x2min-x0[1]), abs(x3min-x0[2])]
-l=1.215
+def main(n, m):
+    if not check(n, m, False, False):
+        if not check(15, m, True, True):
+            main(n, m)
 
 
-raw_natur_table = [[x1min, x2min, x3min],
-                   [x1min, x2max, x3max],
-                   [x1max, x2min, x3max],
-                   [x1max, x2max, x3min],
-
-                   [x1min, x2min, x3max],
-                   [x1min, x2max, x3min],
-                   [x1max, x2min, x3min],
-                   [x1max, x2max, x3max],
-
-                   [-l*detx[0]+x0[0], x0[1], x0[2]],
-                   [ l*detx[0]+x0[0], x0[1], x0[2]],
-                   [x0[0], -l*detx[1]+x0[1], x0[2]],
-                   [x0[0],  l*detx[1]+x0[1], x0[2]],
-                   [x0[0], x0[1], -l*detx[2]+x0[2]],
-                   [x0[0], x0[1],  l*detx[2]+x0[2]],
-                   [x0[0],      x0[1],     x0[2]]]
-
-raw_factors_table = [[-1, -1, -1],
-                     [-1, +1, +1],
-                     [+1, -1, +1],
-                     [+1, +1, -1],
-
-                     [-1, -1, +1],
-                     [-1, +1, -1],
-                     [+1, -1, -1],
-                     [+1, +1, +1],
-
-                     [-1.215, 0, 0],
-                     [+1.215, 0, 0],
-                     [0, -1.215, 0],
-                     [0, +1.215, 0],
-                     [0, 0, -1.215],
-                     [0, 0, +1.215],
-                     [0, 0, 0]]
-
-
-factors_table = generate_factors_table(raw_factors_table)
-print("Матриця кодованих значень Х")
-for row in factors_table:
-    print(row)
-
-natur_table = generate_factors_table(raw_natur_table)
-with_null_factor = list(map(lambda x: [1] + x, natur_table))
-
-y_arr = [[random.random()*(ymax-ymin) + ymin for i in range(m)] for j in range(N)]
-while not cochran_criteria(m, N, y_arr):
-    m+=1
-    y_arr = [[random.random()*(ymax - ymin) + ymin for i in range(m)] for j in range(N)]
-y_i = np.array([np.average(row) for row in y_arr])
-coefficients = [[m_ij(x_i(column, raw_factors_table)*x_i(row, raw_factors_table)) for column in range(11)] for row in range(11)]
-free_values = [m_ij(y_i, x_i(i, raw_factors_table)) for i in range(11)]
-beta_coef = np.linalg.solve(coefficients, free_values)
-
-#Критерій Стьюдента
-y_table = y_arr
-print("\nПеревірка значимості коефіцієнтів регресії за критерієм Стьюдента: ")
-average_variation = np.average(list(map(np.var, y_table)))
-y_averages = np.array(list(map(np.average, y_table)))
-variation_beta_s = average_variation/N/m
-standard_deviation_beta_s = math.sqrt(variation_beta_s)
-x_vals = [x_i(i, raw_factors_table) for i in range(11)]
-t_i = np.array([abs(beta_coef[i])/standard_deviation_beta_s for i in range(len(beta_coef))])
-f3 = (m-1)*N
-q = 1-p
-t = get_student_value(f3, q)
-importance = [True if el > t else False for el in list(t_i)]
-
-print("Оцінки коефіцієнтів bs: " + ", ".join(list(map(lambda x: str(round(float(x), 3)), beta_coef))),\
-	"\nКоефіцієнти ts: " + ", ".join(list(map(lambda i: f"{i:.3f}", t_i))), \
-	f"\nf3 = {f3}; q = {q:.3f}; tтабл = {t}")
-
-beta_i = ["b0", "b1", "b2", "b3", "b12", "b13", "b23", "b123", "b11", "b22", "b33"]
-x_i_names = list(compress(["1", "x1", "x2", "x3", "x12", "x13", "x23", "x123", "x1^2", "x2^2", "x3^2"], importance))
-betas_to_print = list(compress(beta_coef, importance))
-
-for i in range(len(importance)):
-	if not importance[i]:
-		print(f"{beta_i[i]} = 0 - незначимий")
-print("Рівняння регресії без незначимих членів: y = ", end="")
-for i in range(len(betas_to_print)):
-	print(f" {betas_to_print[i]:+.3f}*{x_i_names[i]}", end="")
-
-#критерій Фішера
-d = len(list(filter(None, importance)))
-y_table = y_arr
-f3 = (m - 1) * N
-f4 = N - d
-q = 1-p
-
-theor_y = calculate_theoretical_y(natur_table, beta_coef, importance)
-y_averages = np.array(list(map(np.average, y_table)))
-s_ad = m/(N-d)*(sum((theor_y-y_averages)**2))
-y_variations = np.array(list(map(np.var, y_table)))
-s_v = np.average(y_variations)
-f_p = float(s_ad/s_v)
-f_t = get_fisher_value(f3, f4, q)
-
-print("\n\nПеревірка адекватності моделі за критерієм Фішера:",\
-	"\nТеоретичні значення y для різних комбінацій факторів:")
-
-for i in range(len(natur_table)):
-	print(f"x1 = {natur_table[i][1]:>6.3f}; x2 = {natur_table[i][2]:>6.3f}; "
-		f"x3 = {natur_table[i][3]:>7.3f}; y = {theor_y[i]:>8.3f}")
-print(f"\nFp = {f_p:.3f}, Ft = {f_t:.3f}","\nFp < Ft => модель адекватна" if f_p < f_t else \
-	"\nFp > Ft => модель неадекватна")
+if __name__ == '__main__':
+    main(8, 3)
