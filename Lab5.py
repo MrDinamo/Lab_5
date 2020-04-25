@@ -4,6 +4,7 @@ import sklearn.linear_model as lm
 from scipy.stats import f, t
 from prettytable import PrettyTable
 import math
+import time
 
 x_range = ((-7, 4), (-6, 10), (-8, 1))
 
@@ -75,6 +76,7 @@ def planing_matrix(n, m, interaction, quadratic_terms):
         x_normalized.append(row15)
 
     x_normalized = np.array(x_normalized[:len(y)])
+
     x = np.ones(shape=(len(x_normalized), len(x_normalized[0])))
 
     for i in range(len(x_normalized)):
@@ -83,7 +85,6 @@ def planing_matrix(n, m, interaction, quadratic_terms):
                 x[i][j] = x_range[j - 1][0]
             else:
                 x[i][j] = x_range[j - 1][1]
-    # print(x)
     if quadratic_terms and interaction:
         x[8] = [1,-l * delta_x(0) + x_nul(0), x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
         x[9] = [1, l * delta_x(0) + x_nul(0), x_nul(1), x_nul(2), 1, 1, 1, 1, 1, 1, 1]
@@ -183,16 +184,13 @@ def check(n, m, interaction, quadratic_terms):
 
     x, y, x_norm = planing_matrix(n, m, interaction, quadratic_terms)
 
-    if interaction:
-        y_average = [round(sum(i) / len(i), 3) for i in y]
-        B = find_coef(x, y_average, norm=interaction)
-    else:
-        y_average = [round(sum(i) / len(i), 2) for i in y]
-        B = find_coef(x, y_average, norm=interaction)
+    y_average = [round(sum(i) / len(i), 3) for i in y]
+    B = find_coef(x, y_average, norm=interaction)
 
     print('\nСереднє значення y:', y_average)
 
     dispersion_arr = dispersion(y, y_average, n, m)
+
     temp_cohren = f.ppf(q=(1 - q / f1), dfn=f2, dfd=(f1 - 1) * f2)
     cohren_cr_table = temp_cohren / (temp_cohren + f1 - 1)
     Gp = max(dispersion_arr) / sum(dispersion_arr)
@@ -266,4 +264,9 @@ def main(n, m):
 
 
 if __name__ == '__main__':
-    main(8, 3)
+
+
+    start_time = time.time()
+    for _ in range(100):
+        main(8, 3)
+    print(f'\nСередній час виконання одного проходження програми: {((time.time() - start_time) / 100)} секунд')
